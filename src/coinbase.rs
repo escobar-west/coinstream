@@ -1,18 +1,46 @@
-#![allow(dead_code)]
+//#![allow(dead_code)]
 use serde::{
     de::{self, Deserializer, Visitor},
     Deserialize,
 };
 use serde_json::json;
-use std::{io::Write, net::TcpStream};
+use std::{collections::BTreeMap, io::Write, marker::ConstParamTy, net::TcpStream};
 use tungstenite::{
     client::IntoClientRequest, connect, protocol::Message, stream::MaybeTlsStream, WebSocket,
 };
 
 type Stream = WebSocket<MaybeTlsStream<TcpStream>>;
 
-#[derive(Debug)]
-struct DecimalPair((u32, u32));
+#[derive(Debug, Clone)]
+struct OrderBook {
+    bids: BTreeMap<OrderBookKey<{ Side::Buy }>, f32>,
+    asks: BTreeMap<OrderBookKey<{ Side::Sell }>, f32>,
+    max_depth: u16,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct OrderBookKey<const S: Side>(DecimalPair);
+
+impl<const S: Side> Ord for OrderBookKey<S> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match S {
+            Side::Buy => other.0.cmp(&self.0),
+            Side::Sell => self.0.cmp(&other.0),
+        }
+    }
+}
+
+impl<const S: Side> PartialOrd for OrderBookKey<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug, PartialOrd, PartialEq, Ord, Eq, Copy, Clone)]
+struct DecimalPair {
+    integer: u32,
+    fraction: u32,
+}
 
 struct DecimalPairVisitor;
 
@@ -27,10 +55,10 @@ impl Visitor<'_> for DecimalPairVisitor {
         E: de::Error,
     {
         let mut output_iter = value.split('.').map(|x| str::parse(x).unwrap());
-        Ok(DecimalPair((
-            output_iter.next().unwrap(),
-            output_iter.next().unwrap(),
-        )))
+        Ok(DecimalPair {
+            integer: output_iter.next().unwrap(),
+            fraction: output_iter.next().unwrap(),
+        })
     }
 }
 
@@ -43,7 +71,7 @@ impl<'de> Deserialize<'de> for DecimalPair {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ConstParamTy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 enum Side {
     Buy,
@@ -55,8 +83,8 @@ enum Side {
 #[serde(rename_all = "lowercase")]
 enum MessageData {
     Snapshot {
-        bids: Vec<[DecimalPair; 2]>,
-        asks: Vec<[DecimalPair; 2]>,
+        bids: Vec<(DecimalPair, DecimalPair)>,
+        asks: Vec<(DecimalPair, DecimalPair)>,
     },
     L2Update {
         changes: Vec<(Side, DecimalPair, DecimalPair)>,

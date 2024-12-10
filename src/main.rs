@@ -1,3 +1,4 @@
+#![feature(adt_const_params)]
 mod coinbase;
 use coinbase::CoinBaseApiClient;
 use eframe::egui::{self, Color32, Pos2, Rect, UiBuilder, Vec2};
@@ -53,7 +54,7 @@ impl MyEguiApp {
             ui.text_edit_singleline(&mut self.username)
                 .labelled_by(name_label.id);
         });
-        ui.add(egui::Slider::new(&mut self.n_bins, 0..=1000).text("age"));
+        ui.add(egui::Slider::new(&mut self.n_bins, 0..=1000).text("n_bins"));
         if ui.button("Increment").clicked() {
             self.n_bins += 1;
         }
