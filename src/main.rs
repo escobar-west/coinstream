@@ -1,5 +1,6 @@
 #![feature(adt_const_params)]
 mod coinbase;
+mod spinlock;
 use coinbase::CoinBaseApiClient;
 use eframe::egui::{self, Color32, Pos2, Rect, UiBuilder, Vec2};
 use egui_plot::{Bar, BarChart, Plot};
