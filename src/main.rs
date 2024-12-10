@@ -1,7 +1,12 @@
+mod coinbase;
+use coinbase::CoinBaseApiClient;
 use eframe::egui::{self, Color32, Pos2, Rect, UiBuilder, Vec2};
 use egui_plot::{Bar, BarChart, Plot};
 
 fn main() {
+    std::thread::spawn(|| {
+        CoinBaseApiClient::new().connect_to_api();
+    });
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
@@ -13,30 +18,26 @@ fn main() {
 
 #[derive(Default)]
 struct MyEguiApp {
-    name_top: String,
-    age_top: u32,
-    name_bot: String,
-    age_bot: u32,
+    username: String,
+    n_bins: u32,
 }
 
 impl MyEguiApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Self::default()
+        Self {
+            username: String::from("Victor"),
+            n_bins: 100,
+        }
     }
 
     fn depth_chart_ui(&mut self, ui: &mut egui::Ui) {
-        let mut chart = BarChart::new(
-            (-(self.age_bot as i32)..=self.age_bot as i32)
-                .step_by(10)
-                .map(|x| x as f64 * 0.01)
-                .map(|x| {
-                    (
-                        x,
-                        (-x * x / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt(),
-                    )
-                })
+        let width = 2.0 * std::f64::consts::PI / self.n_bins as f64;
+        let chart = BarChart::new(
+            (0..=self.n_bins)
+                .map(|x| width * x as f64)
+                .map(|x| (x, (x * x).sin()))
                 // The 10 factor here is purely for a nice 1:1 aspect ratio
-                .map(|(x, f)| Bar::new(x, f * 10.0).width(0.1).fill(Color32::BLUE))
+                .map(|(x, f)| Bar::new(x, f * 10.0).width(width).fill(Color32::BLUE))
                 .collect(),
         );
 
@@ -49,14 +50,14 @@ impl MyEguiApp {
         ui.heading("My egui Application");
         ui.horizontal(|ui| {
             let name_label = ui.label("Your name: ");
-            ui.text_edit_singleline(&mut self.name_bot)
+            ui.text_edit_singleline(&mut self.username)
                 .labelled_by(name_label.id);
         });
-        ui.add(egui::Slider::new(&mut self.age_bot, 0..=1000).text("age"));
+        ui.add(egui::Slider::new(&mut self.n_bins, 0..=1000).text("age"));
         if ui.button("Increment").clicked() {
-            self.age_bot += 1;
+            self.n_bins += 1;
         }
-        ui.label(format!("Hello '{}', age {}", self.name_bot, self.age_bot));
+        ui.label(format!("Hello '{}', n_bars {}", self.username, self.n_bins));
     }
 }
 
