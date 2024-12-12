@@ -4,6 +4,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering::*},
 };
 
+#[derive(Debug)]
 pub struct Guard<'a, T> {
     lock: &'a SpinLock<T>,
 }
@@ -31,6 +32,7 @@ impl<T> Drop for Guard<'_, T> {
     }
 }
 
+#[derive(Debug)]
 pub struct SpinLock<T> {
     is_locked: AtomicBool,
     value: UnsafeCell<T>,
@@ -52,4 +54,4 @@ impl<T> SpinLock<T> {
     }
 }
 
-unsafe impl<T> Sync for SpinLock<T> where T: Send {}
+unsafe impl<T: Send> Sync for SpinLock<T> {}

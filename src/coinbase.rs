@@ -1,45 +1,36 @@
-//#![allow(dead_code)]
+use crate::{
+    orderbook::{OrderBook, Side as OrderSide},
+    spinlock::SpinLock,
+};
 use serde::{
     de::{self, Deserializer, Visitor},
     Deserialize,
 };
 use serde_json::json;
-use std::{collections::BTreeMap, io::Write, marker::ConstParamTy, net::TcpStream};
+use std::{fmt::Display, io::Write, net::TcpStream, sync::Arc};
 use tungstenite::{
     client::IntoClientRequest, connect, protocol::Message, stream::MaybeTlsStream, WebSocket,
 };
 
 type Stream = WebSocket<MaybeTlsStream<TcpStream>>;
 
-#[derive(Debug, Clone)]
-struct OrderBook {
-    bids: BTreeMap<OrderBookKey<{ Side::Buy }>, f32>,
-    asks: BTreeMap<OrderBookKey<{ Side::Sell }>, f32>,
-    max_depth: u16,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct OrderBookKey<const S: Side>(DecimalPair);
-
-impl<const S: Side> Ord for OrderBookKey<S> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match S {
-            Side::Buy => other.0.cmp(&self.0),
-            Side::Sell => self.0.cmp(&other.0),
-        }
-    }
-}
-
-impl<const S: Side> PartialOrd for OrderBookKey<S> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 #[derive(Debug, PartialOrd, PartialEq, Ord, Eq, Copy, Clone)]
 struct DecimalPair {
     integer: u32,
     fraction: u32,
+}
+
+impl DecimalPair {
+    const ZERO: Self = Self {
+        integer: 0,
+        fraction: 0,
+    };
+}
+
+impl Display for DecimalPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.integer, self.fraction)
+    }
 }
 
 struct DecimalPairVisitor;
@@ -71,11 +62,18 @@ impl<'de> Deserialize<'de> for DecimalPair {
     }
 }
 
-#[derive(Deserialize, Debug, ConstParamTy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[repr(u8)]
 enum Side {
     Buy,
     Sell,
+}
+
+impl From<Side> for OrderSide {
+    fn from(s: Side) -> Self {
+        unsafe { std::mem::transmute(s) }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -91,12 +89,57 @@ enum MessageData {
     },
 }
 
-pub struct CoinBaseApiClient {}
+#[derive(Debug)]
+pub struct CoinBaseApiClient {
+    orderbook: Arc<SpinLock<OrderBook<DecimalPair, DecimalPair>>>,
+}
 
 impl CoinBaseApiClient {
     pub fn new() -> Self {
-        Self {}
+        let orderbook = Arc::new(SpinLock::new(OrderBook::new()));
+        let new = Self { orderbook };
+        new.listen_to_l2();
+        new
     }
+
+    fn listen_to_l2(&self) {
+        let orderbook = Arc::clone(&self.orderbook);
+        let mut stream = self.new_connection();
+        self.subscribe_to_channel("level2_batch", "BTC-USD", &mut stream);
+        std::thread::spawn(move || loop {
+            let mut stdout = std::io::stdout().lock();
+            let Message::Text(s) = stream.read().unwrap() else {
+                continue;
+            };
+            let Ok(data): Result<MessageData, _> = serde_json::from_str(&s) else {
+                continue;
+            };
+            match data {
+                MessageData::Snapshot { bids, asks } => {
+                    let mut book = orderbook.lock();
+                    for b in bids {
+                        book.add_order(OrderSide::Buy, b.0, b.1);
+                    }
+                    for a in asks {
+                        book.add_order(OrderSide::Sell, a.0, a.1);
+                    }
+                }
+                MessageData::L2Update { changes } => {
+                    let mut book = orderbook.lock();
+                    for (side, price, amt) in changes {
+                        match amt {
+                            DecimalPair::ZERO => book.remove_order(side.into(), price),
+                            _ => book.add_order(side.into(), price, amt),
+                        }
+                    }
+                }
+            }
+            stdout
+                .write_all(format!("{}\n", *orderbook.lock()).as_bytes())
+                .unwrap();
+        });
+    }
+
     fn new_connection(&self) -> Stream {
         const USE_PROD: bool = true;
         let url = if USE_PROD {

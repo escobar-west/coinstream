@@ -1,14 +1,12 @@
-#![feature(adt_const_params)]
+#![allow(dead_code)]
 mod coinbase;
+mod orderbook;
 mod spinlock;
 use coinbase::CoinBaseApiClient;
 use eframe::egui::{self, Color32, Pos2, Rect, UiBuilder, Vec2};
 use egui_plot::{Bar, BarChart, Plot};
 
 fn main() {
-    std::thread::spawn(|| {
-        CoinBaseApiClient::new().connect_to_api();
-    });
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "My egui App",
@@ -18,8 +16,8 @@ fn main() {
     .unwrap();
 }
 
-#[derive(Default)]
 struct MyEguiApp {
+    api: CoinBaseApiClient,
     username: String,
     n_bins: u32,
 }
@@ -27,19 +25,18 @@ struct MyEguiApp {
 impl MyEguiApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self {
+            api: CoinBaseApiClient::new(),
             username: String::from("Victor"),
             n_bins: 100,
         }
     }
 
     fn depth_chart_ui(&mut self, ui: &mut egui::Ui) {
-        let width = 2.0 * std::f64::consts::PI / self.n_bins as f64;
+        let width = 1.0;
         let chart = BarChart::new(
             (0..=self.n_bins)
-                .map(|x| width * x as f64)
-                .map(|x| (x, (x * x).sin()))
-                // The 10 factor here is purely for a nice 1:1 aspect ratio
-                .map(|(x, f)| Bar::new(x, f * 10.0).width(width).fill(Color32::BLUE))
+                .map(|x| (width * (x as f64 + 0.5), x as f64))
+                .map(|(x, f)| Bar::new(x, f).width(width).fill(Color32::BLUE))
                 .collect(),
         );
 
@@ -49,7 +46,6 @@ impl MyEguiApp {
     }
 
     fn bar_chart_ui(&mut self, ui: &mut egui::Ui) {
-        ui.heading("My egui Application");
         ui.horizontal(|ui| {
             let name_label = ui.label("Your name: ");
             ui.text_edit_singleline(&mut self.username)
@@ -75,5 +71,6 @@ impl eframe::App for MyEguiApp {
             let ui_builder = UiBuilder::default().max_rect(bot_rect);
             ui.scope_builder(ui_builder, |ui| self.bar_chart_ui(ui));
         });
+        ctx.request_repaint();
     }
 }
