@@ -75,6 +75,7 @@ enum Side {
 
 impl From<Side> for OrderSide {
     fn from(s: Side) -> Self {
+        // Safety: Enums must both be repr(u8) with Variants = {0, 1}
         unsafe { std::mem::transmute(s) }
     }
 }
