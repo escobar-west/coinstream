@@ -4,7 +4,7 @@ mod orderbook;
 mod spinlock;
 use coinbase::CoinBaseApiClient;
 use eframe::egui::{self, Color32, Pos2, Rect, UiBuilder, Vec2};
-use egui_plot::{Bar, BarChart, Plot};
+use egui_plot::{Bar, BarChart, Plot, PlotBounds};
 
 fn main() {
     let native_options = eframe::NativeOptions::default();
@@ -32,17 +32,61 @@ impl MyEguiApp {
     }
 
     fn depth_chart_ui(&mut self, ui: &mut egui::Ui) {
-        let width = 1.0;
+        let n_bars = 200;
+        let orderbook = {
+            let orderbook = self.api.orderbook.lock().clone();
+            orderbook
+        };
+        let Some((prev_bid_coords, prev_bid_amt)) = orderbook.bids.first_key_value() else {
+            return;
+        };
+        let Some((prev_ask_coords, prev_ask_amt)) = orderbook.asks.first_key_value() else {
+            return;
+        };
+        let (mut prev_bid_coords, mut prev_bid_amt): (f64, f64) =
+            ((&prev_bid_coords.0).into(), prev_bid_amt.into());
+        let (mut prev_ask_coords, mut prev_ask_amt): (f64, f64) =
+            (prev_ask_coords.into(), prev_ask_amt.into());
+        let mid_point = (prev_bid_coords + prev_ask_coords) / 2.0;
         let chart = BarChart::new(
-            (0..=self.n_bins)
-                .map(|x| (width * (x as f64 + 0.5), x as f64))
-                .map(|(x, f)| Bar::new(x, f).width(width).fill(Color32::BLUE))
+            orderbook
+                .bids
+                .iter()
+                .skip(1)
+                .take(n_bars)
+                .map(|(x, f)| {
+                    let coords = (&x.0).into();
+                    let amt: f64 = f.into();
+                    let prev_width = prev_bid_coords - coords;
+                    let bar = Bar::new(prev_bid_coords - prev_width / 2.0, prev_bid_amt)
+                        .width(prev_width)
+                        .fill(Color32::GREEN);
+                    prev_bid_coords = coords;
+                    prev_bid_amt += amt;
+                    bar
+                })
+                .chain(orderbook.asks.iter().skip(1).take(n_bars).map(|(x, f)| {
+                    let coords = x.into();
+                    let amt: f64 = f.into();
+                    let prev_width = coords - prev_ask_coords;
+                    let bar = Bar::new(prev_ask_coords + prev_width / 2.0, prev_ask_amt)
+                        .width(prev_width)
+                        .fill(Color32::RED);
+                    prev_ask_coords = coords;
+                    prev_ask_amt += amt;
+                    bar
+                }))
                 .collect(),
         );
-
-        Plot::new("Normal Distribution Demo")
-            .clamp_grid(true)
-            .show(ui, |plot_ui| plot_ui.bar_chart(chart));
+        Plot::new("Depth Chart")
+            .show_grid(false)
+            .show(ui, |plot_ui| {
+                plot_ui.set_plot_bounds(PlotBounds::from_min_max(
+                    [mid_point - 100.0, 0.0],
+                    [mid_point + 60.0, 60.0],
+                ));
+                plot_ui.bar_chart(chart)
+            });
     }
 
     fn bar_chart_ui(&mut self, ui: &mut egui::Ui) {

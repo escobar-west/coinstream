@@ -9,8 +9,8 @@ pub enum Side {
 
 #[derive(Debug, Clone)]
 pub struct OrderBook<K: Ord, V> {
-    bids: BTreeMap<Reverse<K>, V>,
-    asks: BTreeMap<K, V>,
+    pub bids: BTreeMap<Reverse<K>, V>,
+    pub asks: BTreeMap<K, V>,
 }
 
 impl<K: Ord, V> OrderBook<K, V> {

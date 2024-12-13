@@ -15,21 +15,24 @@ use tungstenite::{
 type Stream = WebSocket<MaybeTlsStream<TcpStream>>;
 
 #[derive(Debug, PartialOrd, PartialEq, Ord, Eq, Copy, Clone)]
-struct DecimalPair {
-    integer: u32,
-    fraction: u32,
+pub struct DecimalPair {
+    pub int: u32,
+    pub frac: u32,
 }
 
 impl DecimalPair {
-    const ZERO: Self = Self {
-        integer: 0,
-        fraction: 0,
-    };
+    const ZERO: Self = Self { int: 0, frac: 0 };
 }
 
 impl Display for DecimalPair {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.integer, self.fraction)
+        write!(f, "{}.{}", self.int, self.frac)
+    }
+}
+
+impl From<&DecimalPair> for f64 {
+    fn from(v: &DecimalPair) -> Self {
+        v.int as f64 + v.frac as f64 / 1e8
     }
 }
 
@@ -47,8 +50,8 @@ impl Visitor<'_> for DecimalPairVisitor {
     {
         let mut output_iter = value.split('.').map(|x| str::parse(x).unwrap());
         Ok(DecimalPair {
-            integer: output_iter.next().unwrap(),
-            fraction: output_iter.next().unwrap(),
+            int: output_iter.next().unwrap(),
+            frac: output_iter.next().unwrap(),
         })
     }
 }
@@ -91,7 +94,7 @@ enum MessageData {
 
 #[derive(Debug)]
 pub struct CoinBaseApiClient {
-    orderbook: Arc<SpinLock<OrderBook<DecimalPair, DecimalPair>>>,
+    pub orderbook: Arc<SpinLock<OrderBook<DecimalPair, DecimalPair>>>,
 }
 
 impl CoinBaseApiClient {
@@ -107,7 +110,6 @@ impl CoinBaseApiClient {
         let mut stream = self.new_connection();
         self.subscribe_to_channel("level2_batch", "BTC-USD", &mut stream);
         std::thread::spawn(move || loop {
-            let mut stdout = std::io::stdout().lock();
             let Message::Text(s) = stream.read().unwrap() else {
                 continue;
             };
@@ -134,9 +136,6 @@ impl CoinBaseApiClient {
                     }
                 }
             }
-            stdout
-                .write_all(format!("{}\n", *orderbook.lock()).as_bytes())
-                .unwrap();
         });
     }
 
