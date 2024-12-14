@@ -7,7 +7,7 @@ use serde::{
     Deserialize,
 };
 use serde_json::json;
-use std::{fmt::Display, io::Write, net::TcpStream, sync::Arc};
+use std::{fmt::Display, net::TcpStream, sync::Arc};
 use tungstenite::{
     client::IntoClientRequest, connect, protocol::Message, stream::MaybeTlsStream, WebSocket,
 };
@@ -75,8 +75,10 @@ enum Side {
 
 impl From<Side> for OrderSide {
     fn from(s: Side) -> Self {
-        // Safety: Enums must both be repr(u8) with Variants = {0, 1}
-        unsafe { std::mem::transmute(s) }
+        match s {
+            Side::Buy => OrderSide::Buy,
+            Side::Sell => OrderSide::Sell,
+        }
     }
 }
 
@@ -131,8 +133,8 @@ impl CoinBaseApiClient {
                     let mut book = orderbook.lock();
                     for (side, price, amt) in changes {
                         match amt {
-                            DecimalPair::ZERO => book.remove_order(side.into(), price),
-                            _ => book.add_order(side.into(), price, amt),
+                            DecimalPair::ZERO => book.remove_order(side, price),
+                            _ => book.add_order(side, price, amt),
                         }
                     }
                 }
@@ -164,24 +166,5 @@ impl CoinBaseApiClient {
             .to_string(),
         );
         stream.send(subscribe_msg).expect("send message failed");
-    }
-
-    fn listen_to_channel(&self, stream: &mut Stream) {
-        let mut stdout = std::io::stdout().lock();
-        loop {
-            let Message::Text(s) = stream.read().unwrap() else {
-                continue;
-            };
-            let Ok(data): Result<MessageData, _> = serde_json::from_str(&s) else {
-                continue;
-            };
-            stdout.write_all(format!("{data:#?}").as_bytes()).unwrap();
-        }
-    }
-
-    pub fn connect_to_api(&self) {
-        let mut stream = self.new_connection();
-        self.subscribe_to_channel("level2_batch", "BTC-USD", &mut stream);
-        self.listen_to_channel(&mut stream);
     }
 }

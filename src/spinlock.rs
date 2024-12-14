@@ -1,5 +1,6 @@
 use std::{
     cell::UnsafeCell,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, Ordering::*},
 };
@@ -7,6 +8,7 @@ use std::{
 #[derive(Debug)]
 pub struct Guard<'a, T> {
     lock: &'a SpinLock<T>,
+    _marker: PhantomData<&'a mut T>,
 }
 
 impl<T> Deref for Guard<'_, T> {
@@ -50,7 +52,10 @@ impl<T> SpinLock<T> {
         while self.is_locked.swap(true, Acquire) {
             std::hint::spin_loop();
         }
-        Guard { lock: self }
+        Guard {
+            lock: self,
+            _marker: PhantomData,
+        }
     }
 }
 

@@ -20,8 +20,9 @@ impl<K: Ord, V> OrderBook<K, V> {
             asks: BTreeMap::new(),
         }
     }
-    pub fn add_order(&mut self, side: Side, key: K, val: V) {
-        match side {
+
+    pub fn add_order<S: Into<Side>>(&mut self, side: S, key: K, val: V) {
+        match side.into() {
             Side::Buy => {
                 self.bids.insert(Reverse(key), val);
             }
@@ -31,8 +32,8 @@ impl<K: Ord, V> OrderBook<K, V> {
         }
     }
 
-    pub fn remove_order(&mut self, side: Side, key: K) {
-        match side {
+    pub fn remove_order<S: Into<Side>>(&mut self, side: S, key: K) {
+        match side.into() {
             Side::Buy => {
                 self.bids.remove(&Reverse(key));
             }
@@ -40,11 +41,6 @@ impl<K: Ord, V> OrderBook<K, V> {
                 self.asks.remove(&key);
             }
         }
-    }
-
-    pub fn clear_book(&mut self) {
-        self.bids.clear();
-        self.asks.clear();
     }
 }
 
